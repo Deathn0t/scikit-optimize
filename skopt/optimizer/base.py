@@ -26,7 +26,7 @@ def base_minimize(func, dimensions, base_estimator,
                   acq_func="EI", acq_optimizer="lbfgs",
                   x0=None, y0=None, random_state=None, verbose=False,
                   callback=None, n_points=10000, n_restarts_optimizer=5,
-                  xi=0.01, kappa=1.96, n_jobs=1, model_queue_size=None):
+                  xi=0.01, kappa=1.96, n_jobs=1, model_queue_size=None, update_prior=False):
     """Base optimizer class
 
     Parameters
@@ -212,7 +212,7 @@ def base_minimize(func, dimensions, base_estimator,
 
     acq_optimizer_kwargs = {
         "n_points": n_points, "n_restarts_optimizer": n_restarts_optimizer,
-        "n_jobs": n_jobs}
+        "n_jobs": n_jobs, "update_prior": update_prior}
     acq_func_kwargs = {"xi": xi, "kappa": kappa}
 
     # Initialize optimization

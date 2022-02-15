@@ -261,6 +261,7 @@ class Optimizer(object):
         self.n_restarts_optimizer = acq_optimizer_kwargs.get(
             "n_restarts_optimizer", 5)
         self.n_jobs = acq_optimizer_kwargs.get("n_jobs", 1)
+        self.update_prior = acq_optimizer_kwargs.get("update_prior", False)
         self.acq_optimizer_kwargs = acq_optimizer_kwargs
 
         # Configure search space
@@ -534,6 +535,10 @@ class Optimizer(object):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 est.fit(self.space.transform(self.Xi), self.yi)
+            
+            # update prior
+            if self.update_prior:
+                self.space.update_prior(self.Xi, self.yi)
 
             if hasattr(self, "next_xs_") and self.acq_func == "gp_hedge":
                 self.gains_ -= est.predict(np.vstack(self.next_xs_))

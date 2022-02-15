@@ -5,6 +5,7 @@ import yaml
 from scipy.stats.distributions import randint
 from scipy.stats.distributions import rv_discrete
 from scipy.stats.distributions import uniform
+from scipy.stats import gaussian_kde
 
 from sklearn.utils import check_random_state
 from sklearn.utils.fixes import sp_version
@@ -389,6 +390,37 @@ class Real(Dimension):
                                "the space, not %s and %s." % (a, b))
         return abs(a - b)
 
+    def update_prior(self, X, y):
+
+        X = np.array(X)
+        y = np.array(y)
+        
+        q = 0.9  # quantile assuming minimization
+        y_ = np.quantile(y, q) # threshold
+        X_low = X[y <= y_]
+        self._kde = gaussian_kde(X_low)
+
+    def rvs(self, n_samples=1, random_state=None):
+        """Draw random samples.
+        Parameters
+        ----------
+        n_samples : int or None
+            The number of samples to be drawn.
+        random_state : int, RandomState instance, or None (default)
+            Set random state to something other than None for reproducible
+            results.
+        """
+        rng = check_random_state(random_state)
+
+        if hasattr(self, "_kde"):
+            # samples = self._kde.sample(n_samples, random_state=rng).reshape(-1)
+            samples = self._kde.resample(n_samples, rng).reshape(-1)
+            samples = np.clip(samples, self.low, self.high)
+        else:
+            samples = self._rvs.rvs(size=n_samples, random_state=rng)
+
+        return self.inverse_transform(samples)
+
 
 class Integer(Dimension):
     """Search space dimension that can take on integer values.
@@ -744,6 +776,55 @@ class Categorical(Dimension):
             raise RuntimeError("Can only compute distance for values within"
                                " the space, not {} and {}.".format(a, b))
         return 1 if a != b else 0
+
+    def update_prior(self, X, y):
+
+        if self.transform_ == "label":
+            X = self.transform(X).reshape(-1)
+        elif self.transform_ == "onehot":
+            X = self.transform(X).argmax(-1)
+        
+        q = 0.9  # quantile assuming minimization
+        y_ = np.quantile(y, q) # threshold
+        X_low = X[y <= y_]
+        
+        unique, counts = np.unique(X_low, return_counts=True)
+        C = np.zeros((len(self.categories,)))
+        C[unique] = counts
+
+        if self.prior is None:
+            self.prior_ = np.tile(1. / len(self.categories),
+                                  len(self.categories))
+        else:
+            self.prior_ = self.prior
+
+        self.prior_ = len(self.categories) * self.prior_ + C
+        self.prior_ = self.prior_ / self.prior_.sum()
+
+        print(f"{self.name} -> {self.prior_}")
+
+        self.set_transformer(self.transform_)
+
+    # def rvs(self, n_samples=1, random_state=None):
+    #     """Draw random samples.
+    #     Parameters
+    #     ----------
+    #     n_samples : int or None
+    #         The number of samples to be drawn.
+    #     random_state : int, RandomState instance, or None (default)
+    #         Set random state to something other than None for reproducible
+    #         results.
+    #     """
+    #     rng = check_random_state(random_state)
+
+    #     # if False:
+    #     #     # samples = self._kde.sample(n_samples, random_state=rng).reshape(-1)
+    #     #     # samples = self._kde.resample(n_samples, rng).reshape(-1)
+    #     #     # samples = np.clip(samples, self.low, self.high)
+    #     # else:
+    #     samples = self._rvs.rvs(size=n_samples, random_state=rng)
+
+    #     return self.inverse_transform(samples)
 
 
 class Space(object):
@@ -1138,3 +1219,12 @@ class Space(object):
             distance += dim.distance(a, b)
 
         return distance
+
+    def update_prior(self, X, y):
+
+        print("update prior")
+        y = np.array(y)
+
+        for i, dim in enumerate(self.dimensions):
+            Xi = [x[i] for x in X]
+            dim.update_prior(Xi, y)
