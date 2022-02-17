@@ -4,6 +4,20 @@ import warnings
 from scipy.stats import norm
 
 
+def is_pareto_efficient_simple(costs):
+    """
+    Find the pareto-efficient points
+    :param costs: An (n_points, n_costs) array
+    :return: A (n_points, ) boolean array, indicating whether each point is Pareto efficient
+    """
+    is_efficient = np.ones(costs.shape[0], dtype = bool)
+    for i, c in enumerate(costs):
+        if is_efficient[i]:
+            is_efficient[is_efficient] = np.any(costs[is_efficient]<c, axis=1)  # Keep any point with a lower cost
+            is_efficient[i] = True  # And keep self
+    return is_efficient
+
+
 def gaussian_acquisition_1D(X, model, y_opt=None, acq_func="LCB",
                             acq_func_kwargs=None, return_grad=True):
     """
@@ -141,9 +155,25 @@ def gaussian_lcb(X, model, kappa=1.96, return_grad=False):
 
         else:
             mu, std = model.predict(X, return_std=True)
-            if kappa == "inf":
-                return -std
-            return mu - kappa * std
+            
+            if len(mu.shape) == 2:
+                
+                # if kappa == "inf":
+                #     return -std.sum(axis=1)
+                # return (mu - kappa * std).sum(axis=1)
+
+                costs = mu - kappa * std
+                is_efficient = is_pareto_efficient_simple(costs)
+                N = is_efficient.astype(int).sum()
+                acq = np.ones((len(mu), ))
+                acq[is_efficient] = 1/N
+                return acq
+            else:
+            
+                if kappa == "inf":
+                    return -std
+            
+                return mu - kappa * std
 
 
 def gaussian_pi(X, model, y_opt=0.0, xi=0.01, return_grad=False):

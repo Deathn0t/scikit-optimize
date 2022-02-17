@@ -3,7 +3,7 @@ from sklearn.ensemble import RandomForestRegressor as _sk_RandomForestRegressor
 from sklearn.ensemble import ExtraTreesRegressor as _sk_ExtraTreesRegressor
 
 
-def _return_std(X, trees, predictions, min_variance):
+def _return_std(X, n_outputs, trees, predictions, min_variance):
     """
     Returns `std(Y | X)`.
 
@@ -14,6 +14,9 @@ def _return_std(X, trees, predictions, min_variance):
     ----------
     X : array-like, shape=(n_samples, n_features)
         Input data.
+
+    n_outputs: int.
+        Number of outputs.
 
     trees : list, shape=(n_estimators,)
         List of fit sklearn trees as obtained from the ``estimators_``
@@ -31,7 +34,12 @@ def _return_std(X, trees, predictions, min_variance):
 
     """
     # This derives std(y | x) as described in 4.3.2 of arXiv:1211.0906
-    std = np.zeros(len(X))
+    # std = np.zeros(len(X))
+    flat = len(predictions.shape) == 1
+    if flat:
+        predictions = predictions.reshape(-1, 1)
+    
+    std = np.zeros((n_outputs, len(X)))
 
     for tree in trees:
         var_tree = tree.tree_.impurity[tree.apply(X)]
@@ -42,13 +50,18 @@ def _return_std(X, trees, predictions, min_variance):
         # for cases such as leaves with 1 sample in which there
         # is zero variance.
         var_tree[var_tree < min_variance] = min_variance
-        mean_tree = tree.predict(X)
+        mean_tree = tree.predict(X).T
         std += var_tree + mean_tree ** 2
 
+    std = std.T
     std /= len(trees)
     std -= predictions ** 2.0
     std[std < 0.0] = 0.0
     std = std ** 0.5
+
+    if flat:
+        std = std.reshape(-1)
+
     return std
 
 
@@ -214,7 +227,10 @@ class RandomForestRegressor(_sk_RandomForestRegressor):
             n_jobs=n_jobs, random_state=random_state,
             verbose=verbose, warm_start=warm_start)
 
-    def predict(self, X, return_std=False):
+    # def fit(self, X, y, *args, **kwargs):
+    #     return super(RandomForestRegressor, self).fit(X, *args, **kwargs)
+
+    def predict(self, X, return_std=False, forestci=False):
         """Predict continuous output for X.
 
         Parameters
@@ -243,7 +259,9 @@ class RandomForestRegressor(_sk_RandomForestRegressor):
                 raise ValueError(
                     "Expected impurity to be 'mse', got %s instead"
                     % self.criterion)
-            std = _return_std(X, self.estimators_, mean, self.min_variance)
+
+            std = _return_std(X, self.n_outputs_, self.estimators_, mean, self.min_variance)
+
             return mean, std
         return mean
 

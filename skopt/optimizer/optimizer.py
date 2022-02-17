@@ -617,6 +617,9 @@ class Optimizer(object):
     def _check_y_is_valid(self, x, y):
         """Check if the shape and types of x and y are consistent."""
 
+        if is_2Dlistlike(y) and is_2Dlistlike(x) and self.acq_func == "LCB":
+            return
+
         if "ps" in self.acq_func:
             if is_2Dlistlike(x):
                 if not (np.ndim(y) == 2 and np.shape(y)[1] == 2):
