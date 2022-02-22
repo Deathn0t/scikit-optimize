@@ -249,8 +249,7 @@ class Real(Dimension):
         can be float.
 
     """
-    def __init__(self, low, high, prior="uniform", base=10, transform=None,
-                 name=None, dtype=float):
+    def __init__(self, low, high, prior="uniform", base=10, transform=None, name=None, dtype=float, inactive_value=None):
         if high <= low:
             raise ValueError("the lower bound {} has to be less than the"
                              " upper bound {}".format(low, high))
@@ -264,6 +263,7 @@ class Real(Dimension):
         self.log_base = np.log10(base)
         self.name = name
         self.dtype = dtype
+        self.inactive_value = inactive_value
         self._rvs = None
         self.transformer = None
         self.transform_ = transform
@@ -434,8 +434,7 @@ class Integer(Dimension):
         a numpy array
 
     """
-    def __init__(self, low, high, prior="uniform", base=10, transform=None,
-                 name=None, dtype=np.int64):
+    def __init__(self, low, high, prior="uniform", base=10, transform=None,  name=None, dtype=np.int64, inactive_value=None):
         if high <= low:
             raise ValueError("the lower bound {} has to be less than the"
                              " upper bound {}".format(low, high))
@@ -449,6 +448,7 @@ class Integer(Dimension):
         self.log_base = np.log10(base)
         self.name = name
         self.dtype = dtype
+        self.inactive_value = inactive_value
         self.transform_ = transform
         self._rvs = None
         self.transformer = None
@@ -601,10 +601,11 @@ class Categorical(Dimension):
         Name associated with dimension, e.g., "colors".
 
     """
-    def __init__(self, categories, prior=None, transform=None, name=None):
+    def __init__(self, categories, prior=None, transform=None, name=None, inactive_value=None):
         self.categories = tuple(categories)
 
         self.name = name
+        self.inactive_value = inactive_value
 
         if transform is None:
             transform = "onehot"
@@ -895,9 +896,24 @@ class Space(object):
 
         # Draw
         columns = []
+        hp_names = []
 
         for dim in self.dimensions:
+            
+            hp_names.append(dim.name)
+
             columns.append(dim.rvs(n_samples=n_samples, random_state=rng))
+
+        if hasattr(self, "conditions"):
+            for cond in self.conditions:
+                i_b = hp_names.index(cond.dim_b.name)
+                is_active = cond.test(columns[i_b])
+
+                i_a = hp_names.index(cond.dim_a.name)
+                values = np.asarray(columns[i_a])
+                
+                values[~is_active] = cond.dim_a.inactive_value
+                columns[i_a] = values.tolist()
 
         # Transpose
         return _transpose_list_array(columns)
@@ -1138,3 +1154,32 @@ class Space(object):
             distance += dim.distance(a, b)
 
         return distance
+
+    def add_condition(self, condition):
+        if not(hasattr(self, "conditions")):
+            self.conditions = []
+        self.conditions.append(condition)
+
+    def add_conditions(self, conditions):
+        for cond in conditions:
+            self.add_condition(cond)
+
+
+class GreaterEqualCondition:
+    """ dim_a is active if (dim_b >= value)
+
+        Args:
+            dim (Dimension): _description_
+            value (float or int): _description_
+    """
+    def __init__(self, dim_a, dim_b, value):
+        self.dim_a = dim_a
+        self.dim_b = dim_b
+        self.value = value
+
+    def __repr__(self) -> str:
+        return f"{self.dim_a.name} | {self.dim_b.name} >= {self.value}"
+
+    def test(self, x):
+        x = np.asarray(x)
+        return (x >= self.value)

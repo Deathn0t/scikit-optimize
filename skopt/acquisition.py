@@ -3,6 +3,8 @@ import warnings
 
 from scipy.stats import norm
 
+from skopt.hypervolume import hypervolume
+
 
 def is_pareto_efficient_simple(costs):
     """
@@ -32,7 +34,8 @@ def gaussian_acquisition_1D(X, model, y_opt=None, acq_func="LCB",
 
 
 def _gaussian_acquisition(X, model, y_opt=None, acq_func="LCB",
-                          return_grad=False, acq_func_kwargs=None):
+                          return_grad=False, acq_func_kwargs=None,
+                          y_hist=None):
     """
     Wrapper so that the output of this function can be
     directly passed to a minimizer.
@@ -54,7 +57,7 @@ def _gaussian_acquisition(X, model, y_opt=None, acq_func="LCB",
         model, time_model = model.estimators_
 
     if acq_func == "LCB":
-        func_and_grad = gaussian_lcb(X, model, kappa, return_grad)
+        func_and_grad = gaussian_lcb(X, model, kappa, return_grad, y_hist)
         if return_grad:
             acq_vals, acq_grad = func_and_grad
         else:
@@ -101,7 +104,7 @@ def _gaussian_acquisition(X, model, y_opt=None, acq_func="LCB",
     return acq_vals
 
 
-def gaussian_lcb(X, model, kappa=1.96, return_grad=False):
+def gaussian_lcb(X, model, kappa=1.96, return_grad=False, y_hist=None):
     """
     Use the lower confidence bound to estimate the acquisition
     values.
@@ -163,10 +166,28 @@ def gaussian_lcb(X, model, kappa=1.96, return_grad=False):
                 # return (mu - kappa * std).sum(axis=1)
 
                 costs = mu - kappa * std
-                is_efficient = is_pareto_efficient_simple(costs)
-                N = is_efficient.astype(int).sum()
-                acq = np.ones((len(mu), ))
-                acq[is_efficient] = 1/N
+                pf_costs_idx = np.where(is_pareto_efficient_simple(costs))
+                pf_costs_val = costs[pf_costs_idx]
+
+                acq = np.zeros((len(mu),))
+
+                y_hist = np.asarray(y_hist)
+                pf_hist_idx = np.where(is_pareto_efficient_simple(y_hist))
+                pf_hist_val = y_hist[pf_hist_idx]
+
+                ref = np.vstack((y_hist.max(axis=0), pf_costs_val.max(axis=0))).max(axis=0)
+
+
+                # hypervolume improvement
+                hv_hist = hypervolume(pf_hist_val, ref)
+                hvi_pf_costs = np.zeros((len(pf_costs_val),)) 
+
+                for i in range(len(pf_costs_val)):
+                    pf_i = np.vstack((pf_hist_val, pf_costs_val[i]))
+                    hvi_pf_costs[i] = -(hypervolume(pf_i, ref) - hv_hist)
+
+                acq[pf_costs_idx] = hvi_pf_costs
+                
                 return acq
             else:
             

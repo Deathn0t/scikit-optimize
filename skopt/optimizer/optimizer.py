@@ -557,7 +557,8 @@ class Optimizer(object):
                 values = _gaussian_acquisition(
                     X=X, model=est, y_opt=np.min(self.yi),
                     acq_func=cand_acq_func,
-                    acq_func_kwargs=self.acq_func_kwargs)
+                    acq_func_kwargs=self.acq_func_kwargs,
+                    y_hist=self.yi)
                 # Find the minimum of the acquisition function by randomly
                 # sampling points from the space
                 if self.acq_optimizer == "sampling":
